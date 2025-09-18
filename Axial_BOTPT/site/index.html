@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Seafloor Pressure Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 24px; color:#111;}
+    header { display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap;}
+    h1 { font-size: 1.25rem; margin:0;}
+    .meta { color:#555; font-size:0.9rem;}
+    .controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin: 16px 0;}
+    select, input { padding:8px; font-size:0.95rem; }
+    #chart { width: 100%; max-width: 1100px; height: 520px; }
+    footer { margin-top: 20px; color:#666; font-size:0.85rem;}
+    .pill { padding:4px 8px; background:#f1f5f9; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Seafloor Pressure Dashboard</h1>
+    <div class="meta">
+      <span class="pill" id="updated">updated…</span>
+      <span class="pill" id="seriesCount"></span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <label>Station:
+      <select id="station"></select>
+    </label>
+    <label>From <input type="date" id="fromDate"></label>
+    <label>To <input type="date" id="toDate"></label>
+    <button id="applyBtn">Apply</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div id="chart"></div>
+
+  <footer>
+    <div>Unit: kPa（元データが psi の場合はサーバー側で kPa に変換しています）</div>
+    <div>Tip: ピンチ/ドラッグで拡大、ダブルクリックでリセット</div>
+  </footer>
+
+  <script>
+    const DATA_URL = "./data/all_series.json";
+    let raw = null;
+
+    async function loadData() {
+      const res = await fetch(DATA_URL, {cache:"no-store"});
+      raw = await res.json();
+
+      document.getElementById("updated").textContent = `updated ${raw.meta.updated_at}`;
+      document.getElementById("seriesCount").textContent = `${raw.meta.count_series} station(s)`;
+
+      const sel = document.getElementById("station");
+      sel.innerHTML = "";
+      for (const s of raw.series) {
+        const opt = document.createElement("option");
+        opt.value = s.station;
+        opt.textContent = s.station;
+        sel.appendChild(opt);
+      }
+      if (sel.value) draw(sel.value);
+    }
+
+    function filterByDate(xs, ys, fromStr, toStr) {
+      if (!fromStr && !toStr) return {x: xs, y: ys};
+      const from = fromStr ? new Date(fromStr) : null;
+      const to = toStr ? new Date(toStr) : null;
+      const xf = [], yf = [];
+      for (let i=0;i<xs.length;i++){
+        const t = new Date(xs[i]);
+        if (from && t < from) continue;
+        if (to && t > new Date(to.getTime()+24*3600*1000-1)) continue; // include end date
+        xf.push(xs[i]); yf.push(ys[i]);
+      }
+      return {x: xf, y: yf};
+    }
+
+    function draw(station) {
+      const s = raw.series.find(d => d.station === station);
+      if (!s) return;
+
+      const fromStr = document.getElementById("fromDate").value;
+      const toStr   = document.getElementById("toDate").value;
+      const {x, y} = filterByDate(s.x, s.y, fromStr, toStr);
+
+      const trace = { x, y, mode: "lines", name: `${station} (${s.unit})` };
+      const layout = {
+        title: `${station}`,
+        xaxis: { title: "Time (UTC)" },
+        yaxis: { title: `Pressure (${s.unit})` },
+        margin: {l:60, r:20, t:40, b:48}
+      };
+      Plotly.newPlot("chart", [trace], layout, {responsive:true, displayModeBar:true});
+    }
+
+    document.getElementById("applyBtn").onclick = () => {
+      const st = document.getElementById("station").value;
+      draw(st);
+    };
+    document.getElementById("resetBtn").onclick = () => {
+      document.getElementById("fromDate").value = "";
+      document.getElementById("toDate").value   = "";
+      const st = document.getElementById("station").value;
+      draw(st);
+    };
+    document.getElementById("station").onchange = (e) => draw(e.target.value);
+
+    loadData();
+  </script>
+</body>
+</html>
